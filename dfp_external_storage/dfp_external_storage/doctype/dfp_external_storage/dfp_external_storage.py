@@ -57,7 +57,7 @@ class S3FileProxy:
 
 	def tell(self):
 		return self.offset
-	
+
 	def read(self, size=0):
 		content = self.readFn(self.offset, size)
 		self.offset = self.offset + len(content)
@@ -124,21 +124,38 @@ class DFPExternalStorage(Document):
 
 	@cached_property
 	def client(self):
-		if self.endpoint and self.access_key and self.secret_key and self.region:
+		# Allow access_key/secret_key to be optional: if not provided in this DocType,
+		# fallback to environment variables.
+		if self.endpoint and self.region:
 			try:
+				# Resolve access key
+				access_key = self.access_key or \
+					os.getenv("AWS_ACCESS_KEY_ID") or \
+					os.getenv("MINIO_ACCESS_KEY") or \
+					os.getenv("MINIO_ROOT_USER")
+
+				# Resolve secret key
 				if self.is_new() and self.secret_key:
 					key_secret = self.secret_key
+				elif self.secret_key:
+					key_secret = get_decrypted_password("DFP External Storage", self.name, "secret_key") if self.name else None
 				else:
-					key_secret = get_decrypted_password("DFP External Storage", self.name, "secret_key")
-				if key_secret:
+					key_secret = None
+
+				secret_key = key_secret or \
+					os.getenv("AWS_SECRET_ACCESS_KEY") or \
+					os.getenv("MINIO_SECRET_KEY") or \
+					os.getenv("MINIO_ROOT_PASSWORD")
+
+				if access_key and secret_key:
 					return MinioConnection(
 						endpoint=self.endpoint,
-						access_key=self.access_key,
-						secret_key=key_secret,
+						access_key=access_key,
+						secret_key=secret_key,
 						region=self.region,
 						secure=self.secure,
 					)
-			except:
+			except Exception:
 				pass
 
 	def remote_files_list(self):
